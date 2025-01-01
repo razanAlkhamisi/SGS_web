@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-from datetime import datetime
 
 def main():
 
@@ -73,16 +72,18 @@ def main():
 
     st.title("دمج البيانات")
 
+    
     # تحميل الملف الرئيسي
-    main_file = st.file_uploader("(Excel) "+"تحميل الملف الرئيسي", type=["xlsx"], key="main_file")
+    main_file = st.file_uploader("(Excel) تحميل الملف الرئيسي", type=["xlsx"], key="main_file")
 
     if main_file:
-        main_df = pd.read_excel(main_file, engine="openpyxl")
+        # قراءة الملف الرئيسي مع الاحتفاظ بأسماء الأعمدة
+        main_df = pd.read_excel(main_file, engine="openpyxl", header=0)
         st.write("### الملف الرئيسي")
         st.write(main_df)
 
         if "GS" not in main_df.columns:
-            st.error("The file must contain GS column")
+            st.error("The file must contain a 'GS' column")
             return
 
         # إضافة عمود جديد للتواريخ إذا لم يكن موجودًا
@@ -91,50 +92,72 @@ def main():
 
         # تحميل الملفات الإضافية
         additional_files = st.file_uploader(
-            " تحميل الملفات الإضافية ", type=["xlsx"], accept_multiple_files=True, key="additional_files"
+            "تحميل الملفات الإضافية", type=["xlsx"], accept_multiple_files=True, key="additional_files"
         )
 
         if additional_files:
             for uploaded_file in additional_files:
-                additional_df = pd.read_excel(uploaded_file, engine="openpyxl")
-                st.write(f"### {uploaded_file.name}")
-                st.write(additional_df)
+                # قراءة جميع الأوراق من الملف الإضافي مع تجاهل الأوراق الفارغة
+                sheets = pd.read_excel(uploaded_file, engine="openpyxl", sheet_name=None, header=0)
 
-                # اختيار العمود المناسب للمقارنة
-                selected_column = st.selectbox(
-                    f"GS "+"اختر العمود الذي يحتوي على رقم",
-                    additional_df.columns,
-                    key=f"select_{uploaded_file.name}"
-                )
 
-                # اختيار العمود الذي يحتوي على التواريخ
-                date_column = st.selectbox(
-                    f"اختر العمود الذي يحتوي على التواريخ في الملف",
-                    additional_df.columns,
-                    key=f"date_{uploaded_file.name}"
-                )
 
-                if selected_column and date_column:
-                    # إزالة القيم الفارغة من العمودين
-                    additional_df = additional_df[additional_df[selected_column].notna() & additional_df[date_column].notna()]
 
-                    # تحديث التواريخ في الملف الرئيسي
-                    for _, row in additional_df.iterrows():
-                        gs_value = row[selected_column]
-                        date_value = row[date_column]
+                # تصفية الأوراق غير الفارغة فقط
+                valid_sheets = {}
+                for sheet_name, df in sheets.items():
+                    if df.apply(lambda x: x.astype(str).str.contains(r"^GS\d+$").any()).any():
+                        valid_sheets[sheet_name] = df
 
-                        # تحقق من وجود GS في الملف الرئيسي
-                        matching_rows = main_df[main_df['GS'] == gs_value]
+                if not valid_sheets:
+                    st.warning(f"GS "+"في الملف لا توجد قيم {uploaded_file.name}")
+                    continue
 
-                        if not matching_rows.empty:
-                            # إذا كان لـ GS تاريخ فارغ، قم بتحديث التاريخ
-                            for idx in matching_rows.index:
-                                if pd.isna(main_df.at[idx, "Date"]):
-                                    main_df.at[idx, "Date"] = date_value
-                        else:
-                            # إذا كانت GS غير موجودة في الملف الرئيسي، أضفها كصف جديد
-                            new_row = {"GS": gs_value, "Date": date_value}
-                            main_df = pd.concat([main_df, pd.DataFrame([new_row])], ignore_index=True)
+                for sheet_name, additional_df in valid_sheets.items():
+                    st.write(f"### {uploaded_file.name} : {sheet_name}")
+
+                    # اختيار عمود GS وعمود التاريخ
+                    selected_column = st.selectbox(
+                        f"GS "+" اختر العمود الذي يحتوي على رقم",
+                        additional_df.columns,
+                        key=f"select_{sheet_name}_{uploaded_file.name}"
+                    )
+
+                    date_column = st.selectbox(
+                        f"اختر العمود الذي يحتوي على التواريخ",
+                        additional_df.columns,
+                        key=f"date_{sheet_name}_{uploaded_file.name}"
+                    )
+                    reason_column = "Reason NMC" if "Reason NMC" in additional_df.columns else None
+
+                    if selected_column and date_column:
+                        # تصفية الصفوف التي تحتوي على قيم GS صالحة
+                        additional_df = additional_df[
+                            additional_df[selected_column].astype(str).str.match(r"^GS\d+$") &
+                            additional_df[date_column].notna()
+                        ]
+
+                        st.write(additional_df)
+
+                        # تحديث البيانات
+                        for _, row in additional_df.iterrows():
+                            gs_value = row[selected_column]
+                            date_value = row[date_column]
+                            reason_nmc_value = row[reason_column] if reason_column else None
+
+                            matching_rows = main_df[main_df["GS"] == gs_value]
+
+                            if not matching_rows.empty:
+                                # تحديث التواريخ إذا كانت فارغة
+                                for idx in matching_rows.index:
+                                    if pd.isna(main_df.at[idx, "Date"]):
+                                        main_df.at[idx, "Date"] = date_value
+                                    if pd.isna(main_df.at[idx, "Reason NMC"]) and reason_nmc_value:
+                                        main_df.at[idx, "Reason NMC"] = reason_nmc_value
+                            else:
+                                # إضافة صف جديد
+                                new_row = {"GS": gs_value, "Date": date_value, "Reason NMC": reason_nmc_value}
+                                main_df = pd.concat([main_df, pd.DataFrame([new_row])], ignore_index=True)
 
             # عرض الملف المحدث
             st.write("### الملف الرئيسي بعد التحديث")
@@ -142,7 +165,7 @@ def main():
 
             # تنزيل الملف المحدث
             output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
                 main_df.to_excel(writer, index=False, sheet_name="Updated Data")
 
             st.download_button(
