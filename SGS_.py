@@ -70,7 +70,7 @@ def main():
  
     st.logo("images/sgs_logo.jpg", size="large")  # تعديل الشعار
 
-    st.title("دمج البيانات")
+    st.title("مج البيانات")
 
     
     # تحميل الملف الرئيسي
@@ -94,8 +94,8 @@ def main():
         if "ST" not in main_df.columns:
             main_df["ST"] = None
             ###
-        if "ST" not in main_df.columns:
-            main_df["Next Action"] = None
+        if "Remarks" not in main_df.columns:
+            main_df["Remarks"] = None
 
 
         # تحميل الملفات الإضافية
