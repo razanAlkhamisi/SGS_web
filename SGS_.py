@@ -86,9 +86,17 @@ def main():
             st.error("The file must contain a 'GS' column")
             return
 
-        # إضافة عمود جديد للتواريخ إذا لم يكن موجودًا
+        # إضافة أعمدة جديدة إذا لم تكن موجودة
         if "Date" not in main_df.columns:
             main_df["Date"] = None
+        if "OOS" not in main_df.columns:
+            main_df["OOS"] = None
+        if "ST" not in main_df.columns:
+            main_df["ST"] = None
+            ###
+        if "ST" not in main_df.columns:
+            main_df["Next Action"] = None
+
 
         # تحميل الملفات الإضافية
         additional_files = st.file_uploader(
@@ -100,21 +108,18 @@ def main():
                 # قراءة جميع الأوراق من الملف الإضافي مع تجاهل الأوراق الفارغة
                 sheets = pd.read_excel(uploaded_file, engine="openpyxl", sheet_name=None, header=0)
 
-
-
-
-                # تصفية الأوراق غير الفارغة فقط
+                # تصفية الأوراق غير الفارغة التي تحتوي على بيانات GS
                 valid_sheets = {}
                 for sheet_name, df in sheets.items():
                     if df.apply(lambda x: x.astype(str).str.contains(r"^GS\d+$").any()).any():
                         valid_sheets[sheet_name] = df
 
                 if not valid_sheets:
-                    st.warning(f"GS "+"في الملف لا توجد قيم {uploaded_file.name}")
+                    st.warning(f'"GS "+"في الملف لا توجد قيم  {uploaded_file.name}"')
                     continue
 
                 for sheet_name, additional_df in valid_sheets.items():
-                    st.write(f"### {uploaded_file.name} : {sheet_name}")
+                    st.write(f"### {uploaded_file.name} - الورقة: {sheet_name}")
 
                     # اختيار عمود GS وعمود التاريخ
                     selected_column = st.selectbox(
@@ -128,7 +133,9 @@ def main():
                         additional_df.columns,
                         key=f"date_{sheet_name}_{uploaded_file.name}"
                     )
+
                     reason_column = "Reason NMC" if "Reason NMC" in additional_df.columns else None
+                    remarks_column = "Next Action" if "Next Action" in additional_df.columns else None
 
                     if selected_column and date_column:
                         # تصفية الصفوف التي تحتوي على قيم GS صالحة
@@ -137,26 +144,60 @@ def main():
                             additional_df[date_column].notna()
                         ]
 
+                        st.write("### الجدول بعد التصفية:")
                         st.write(additional_df)
 
                         # تحديث البيانات
                         for _, row in additional_df.iterrows():
                             gs_value = row[selected_column]
                             date_value = row[date_column]
-                            reason_nmc_value = row[reason_column] if reason_column else None
+                            reason_nmc_value = row[reason_column]  if reason_column in additional_df.columns else None
+                            remarks_value = row[remarks_column]  if remarks_column in additional_df.columns else None
 
+            
+                            if "Jeddah" in uploaded_file.name:
+                                file_identifier = "JED"
+                            elif "Riyadh" in uploaded_file.name:
+                                file_identifier = "RUH"
+                            elif "Medina" in uploaded_file.name:
+                                file_identifier = "MED"
+                            elif "Dammam" in uploaded_file.name:
+                                file_identifier = "DMM"
+                            elif "DHA" in uploaded_file.name:
+                                file_identifier = "DHA"
+                            elif "HOF" in uploaded_file.name:
+                                file_identifier = "HOF"
+                            elif "Local Station" in uploaded_file.name:
+                                file_identifier = "LS"
+                            else:
+                                file_identifier = uploaded_file.name
+                                    
+
+                            
+                            # تحقق من وجود GS في الملف الرئيسي
                             matching_rows = main_df[main_df["GS"] == gs_value]
 
                             if not matching_rows.empty:
-                                # تحديث التواريخ إذا كانت فارغة
+                                # تحديث التواريخ وReason NMC وST إذا كانت فارغة
                                 for idx in matching_rows.index:
                                     if pd.isna(main_df.at[idx, "Date"]):
                                         main_df.at[idx, "Date"] = date_value
-                                    if pd.isna(main_df.at[idx, "Reason NMC"]) and reason_nmc_value:
-                                        main_df.at[idx, "Reason NMC"] = reason_nmc_value
+                                    if pd.isna(main_df.at[idx, "OOS"]) and reason_nmc_value:
+                                        main_df.at[idx, "OOS"] = reason_nmc_value
+                                    if pd.isna(main_df.at[idx, "ST"]):
+                                        main_df.at[idx, "ST"] = file_identifier
+
+                                    if pd.isna(main_df.at[idx, "Remarks"]) and remarks_value:
+                                        main_df.at[idx, "Remarks"] = remarks_value
                             else:
                                 # إضافة صف جديد
-                                new_row = {"GS": gs_value, "Date": date_value, "Reason NMC": reason_nmc_value}
+                                new_row = {
+                                    "GS": gs_value,
+                                    "Date": date_value,
+                                    "OOS": reason_nmc_value,
+                                    "ST": file_identifier,
+                                    "Remarks": remarks_value
+                                }
                                 main_df = pd.concat([main_df, pd.DataFrame([new_row])], ignore_index=True)
 
             # عرض الملف المحدث
@@ -174,7 +215,6 @@ def main():
                 file_name="updated_main_file.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
-
   
 if __name__ == "__main__":
     main()
