@@ -70,7 +70,7 @@ def main():
  
     st.logo("images/sgs_logo.jpg", size="large")  # تعديل الشعار
 
-    st.title("مج البيانات")
+    st.title("دمج البيانات")
 
     
     # تحميل الملف الرئيسي
