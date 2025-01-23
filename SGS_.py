@@ -72,17 +72,16 @@ def main():
 
     st.title("دمج البيانات")
 
-    
+    # تحميل الملف الرئيسي
     main_file = st.file_uploader("(Excel) تحميل الملف الرئيسي", type=["xlsx"], key="main_file")
-
     if main_file:
-        # قراءة الملف الرئيسي مع الاحتفاظ بأسماء الأعمدة
         main_df = pd.read_excel(main_file, engine="openpyxl", header=0)
         st.write("### الملف الرئيسي")
         st.write(main_df)
 
+        # تحقق من وجود عمود GS
         if "GS" not in main_df.columns:
-            st.error("The file must contain 'GS' column")
+            st.error("GS "+"الملف الرئيسي يجب أن يحتوي على عمود ")
             return
 
         # إضافة أعمدة جديدة إذا لم تكن موجودة
@@ -97,10 +96,11 @@ def main():
 
         if additional_files:
             for uploaded_file in additional_files:
-                # قراءة جميع الأوراق من الملف الإضافي مع تجاهل الأوراق الفارغة
                 sheets = pd.read_excel(uploaded_file, engine="openpyxl", sheet_name=None, header=0)
 
-                # تصفية الأوراق غير الفارغة التي تحتوي على بيانات GS
+               
+
+                    
                 valid_sheets = {}
                 for sheet_name, df in sheets.items():
                     if df.apply(lambda x: x.astype(str).str.contains(r"^GS\d+$").any()).any():
@@ -113,111 +113,69 @@ def main():
                 for sheet_name, additional_df in valid_sheets.items():
                     st.write(f"### {uploaded_file.name} - sheet: {sheet_name} -")
 
-                    # اختيار عمود GS وعمود التاريخ
+                    # اختيار الأعمدة
                     selected_column = st.selectbox(
                         f"GS "+" اختر العمود الذي يحتوي على رقم",
                         additional_df.columns,
                         key=f"select_{sheet_name}_{uploaded_file.name}"
                     )
-
                     date_column = st.selectbox(
-                        f"اختر العمود الذي يحتوي على التواريخ",
+                        "اختر العمود الذي يحتوي على التواريخ",
                         additional_df.columns,
                         key=f"date_{sheet_name}_{uploaded_file.name}"
                     )
 
-                    reason_column = "Reason NMC" if "Reason NMC" in additional_df.columns else None
-                    remarks_column = "Next Action" if "Next Action" in additional_df.columns else None
-
                     if selected_column and date_column:
-                        # تصفية الصفوف التي تحتوي على قيم GS صالحة
+                        # تصفية البيانات بناءً على GS
                         additional_df = additional_df[
-                            additional_df[selected_column].astype(str).str.contains(r"(GS\d+|[A-Za-z]*\d+[A-Za-z]*)", na=False) 
-                            #& additional_df[date_column].notna()
+                            additional_df[selected_column].astype(str).str.contains(r"(GS\d+|[A-Za-z]*\d+[A-Za-z]*)", na=False)
                         ]
 
-                        st.write("### الجدول بعد التصفية:")
+                        st.write("###  الجدول بعد التصفية")
                         st.write(additional_df)
 
-                        # تحديث البيانات
+                        
+
+                        # دمج البيانات
                         for _, row in additional_df.iterrows():
                             gs_value = row[selected_column]
                             date_value = row[date_column]
-                            reason_nmc_value = row[reason_column] if reason_column in additional_df.columns else None
-                            remarks_value = row[remarks_column] if remarks_column in additional_df.columns else None
+                            reason_nmc_value = row.get("Reason NMC", None)
+                            remarks_value = row.get("Next Action", None)
 
-                            # تحديد معرف الملف
-                            file_identifier = None
-                            if "Jeddah" in uploaded_file.name:
-                                file_identifier = "JED"
-                            elif "Riyadh" in uploaded_file.name:
-                                file_identifier = "RUH"
-                            elif "Medina" in uploaded_file.name:
-                                file_identifier = "MED"
-                            elif "Dammam" in uploaded_file.name:
-                                file_identifier = "DMM"
-                            elif "DHA" in uploaded_file.name:
-                                file_identifier = "DHA"
-                            elif "HOF" in uploaded_file.name:
-                                file_identifier = "HOF"
-                            elif "Local Station" in uploaded_file.name:
-                                file_identifier = "LS"
+                            if gs_value in main_df["GS"].values:
+                                # تحديث الصفوف الموجودة
+                                main_df.loc[main_df["GS"] == gs_value, ["Date", "OOS", "Remarks"]] = [
+                                    date_value, reason_nmc_value, remarks_value
+                                ]
+
                             else:
-                                file_identifier = uploaded_file.name
+                                 # تحديد معرف الموقع بناءً على اسم الملف
+                                if "Jeddah" or "JED" in uploaded_file.name:
+                                    file_identifier = "JED"
+                                elif "Riyadh" or "RUH" in uploaded_file.name:
+                                    file_identifier = "RUH"
+                                elif "Medina" or "MED" in uploaded_file.name:
+                                    file_identifier = "MED"
+                                elif "Dammam" or "DMM" in uploaded_file.name:
+                                    file_identifier = "DMM"
+                                elif "DHA" or "DHA" in uploaded_file.name:
+                                    file_identifier = "DHA"
+                                elif "HOF" or "HOF" in uploaded_file.name:
+                                    file_identifier = "HOF"
+                                elif "Local Station" or "LS" in uploaded_file.name:
+                                    file_identifier = "LS"
+                                else:
+                                    file_identifier = uploaded_file.name
 
-                            # تحقق من وجود GS في الملف الرئيسي
-                            matching_rows = main_df[main_df["GS"] == gs_value]
 
-                            if not matching_rows.empty:
-                                updated_existing_row = False
-                                duplicate_found = False
 
-                                for idx in matching_rows.index:
-                                    old_date = main_df.at[idx, "Date"]
-                                    old_oos = main_df.at[idx, "OOS"]
-                                    old_remarks = main_df.at[idx, "Remarks"]
-
-                                    # تحقق إذا كانت القيم الجديدة مطابقة
-                                    if (
-                                        old_date == date_value and
-                                        old_oos == reason_nmc_value and
-                                        old_remarks == remarks_value
-                                    ):
-                                        duplicate_found = True
-                                        #break
-
-                                    # تحديث القيم الفارغة فقط
-                                    if (
-                                        (old_date == date_value or pd.isna(old_date)) and
-                                        (old_oos == reason_nmc_value or pd.isna(old_oos)) and
-                                        (old_remarks == remarks_value or pd.isna(old_remarks))
-                                    ):
-                                        if pd.isna(old_date):
-                                            main_df.at[idx, "Date"] = date_value
-                                        if pd.isna(old_oos):
-                                            main_df.at[idx, "OOS"] = reason_nmc_value
-                                        if pd.isna(old_remarks):
-                                            main_df.at[idx, "Remarks"] = remarks_value
-                                        updated_existing_row = True
-                                        
-
-                                # إذا لم يتم التحديث أو لم تكن القيم متطابقة، أضف صفًا جديدًا
-                                if not duplicate_found and not updated_existing_row:
-                                    new_row = {
-                                        "GS": gs_value,
-                                        "Date": date_value,
-                                        "OOS": reason_nmc_value,
-                                        "ST": file_identifier,
-                                        "Remarks": remarks_value
-                                    }
-                                    main_df = pd.concat([main_df, pd.DataFrame([new_row])], ignore_index=True)
-                            else:
-                                # إضافة صف جديد إذا لم يكن GS موجودًا
+                                # إضافة صف جديد
                                 new_row = {
                                     "GS": gs_value,
                                     "Date": date_value,
                                     "OOS": reason_nmc_value,
-                                    "ST": file_identifier,
+                                    "ST": file_identifier,  # اسم الملف كمصدر
                                     "Remarks": remarks_value
                                 }
                                 main_df = pd.concat([main_df, pd.DataFrame([new_row])], ignore_index=True)
